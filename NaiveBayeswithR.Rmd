@@ -1,0 +1,75 @@
+---
+title: "Naive Bayes with R"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DataExplorer)
+library(caTools)
+library(e1071)
+```
+
+## Wine Quality Classifier
+
+This dataset related to red vinho verde wine samples, from the north of Portugal. The goal is to model wine quality based on physicochemical tests.
+
+First input and pre-processing the data:
+```{r,echo=FALSE}
+data_wine <- read.csv("winequality-red.csv", na.strings = "?", sep=";")
+data_wine$quality <- factor(data_wine$quality,
+                            levels = c(3,4,5,6,7,8),
+                            labels = c("1","2","3","4","5","6"));
+```
+```{r}
+str(data_wine)
+```
+Check missing values:
+```{r}
+plot_missing(data_wine)
+```
+<br/>Check correlation between values:
+```{r,echo=FALSE}
+corrTable <- cor(data_wine[,c("fixed.acidity","volatile.acidity","citric.acid","residual.sugar","chlorides","free.sulfur.dioxide","total.sulfur.dioxide","density","pH","sulphates","alcohol")])
+```
+```{r}
+corrTable
+```
+Stratified sampling:
+```{r,echo=FALSE}
+set.seed(1234)
+split = sample.split(data_wine$quality, SplitRatio = 0.7)
+training_set = subset(data_wine, split == TRUE)
+test_set = subset(data_wine, split == FALSE)
+```
+```{r}
+prop.table(table(training_set$quality))
+prop.table(table(test_set$quality))
+```
+Training:
+```{r,echo=FALSE}
+classifier = naiveBayes(x = training_set[ ,-12], y = training_set$quality )
+```
+```{r}
+classifier
+```
+Predict on training dataset:
+```{r,echo=FALSE}
+y_pred_train = predict(classifier, newdata = training_set[ ,-12])
+cm = table(training_set$quality, y_pred_train)
+accuracy = sum(diag(cm))/sum(cm)
+```
+```{r}
+cm
+accuracy
+```
+Predict on test dataset:
+```{r,echo=FALSE}
+y_pred_train_2 = predict(classifier, newdata = test_set[ ,-12])
+cm2 = table(test_set$quality, y_pred_train_2)
+accuracy2 = sum(diag(cm2))/sum(cm2)
+```
+```{r}
+cm2
+accuracy2
+```
