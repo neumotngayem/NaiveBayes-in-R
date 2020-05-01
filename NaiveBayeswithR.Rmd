@@ -7,13 +7,16 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(DataExplorer)
 library(caTools)
-library(e1071)
+library(naivebayes)
+library(caret)
+library(DMwR)
 ```
 
 ## Wine Quality Classifier
 
 This dataset related to red vinho verde wine samples, from the north of Portugal. The goal is to model wine quality based on physicochemical tests.
 
+<h3>1. Data Exploration</h3>
 First input and pre-processing the data:
 ```{r,echo=FALSE}
 data_wine <- read.csv("winequality-red.csv", na.strings = "?", sep=";")
@@ -24,52 +27,135 @@ data_wine$quality <- factor(data_wine$quality,
 ```{r}
 str(data_wine)
 ```
+As we can see that, most of the variable is the numeric variable except the quality variable, which will be the target variable.
+</br>Summary about the dataset:
+```{r}
+summary(data_wine)
+```
+<h3>2. Missing values</h3>
 Check missing values:
 ```{r}
 plot_missing(data_wine)
 ```
+<br/>It is good that there is no missing value in this dataset.<br/>
+<h3>3. Correlation</h3>
 <br/>Check correlation between values:
-```{r,echo=FALSE}
-corrTable <- cor(data_wine[,c("fixed.acidity","volatile.acidity","citric.acid","residual.sugar","chlorides","free.sulfur.dioxide","total.sulfur.dioxide","density","pH","sulphates","alcohol")])
-```
 ```{r}
-corrTable
+plot_correlation(data_wine)
 ```
-Stratified sampling:
-```{r,echo=FALSE}
+<br/>volatile.acidity, citric.acid, total.sulfur.dioxide and alcohol so a good corelation to the target variable<br/>
+<h3>3. Variable distributed</h3>
+Distributed of the independent variables:
+```{r}
+plot_density(data_wine)
+```
+</br> Only density and pH variable show a normal distribution.</br>
+</br>Distributed of the target variable:
+```{r}
+barplot(table(data_wine$quality))
+table(data_wine$quality)
+```
+<br/>The target variable show an imbalance issue.
+<h3>4. Stratified sampling</h3>
+Staified sampling will keep the rate of each category same in training set and test set. The split ration is 0.7 which mean 70% of the observations will belong to training set and 30% will belong to test set.
+```{r}
 set.seed(1234)
 split = sample.split(data_wine$quality, SplitRatio = 0.7)
 training_set = subset(data_wine, split == TRUE)
 test_set = subset(data_wine, split == FALSE)
 ```
+The proportion after stratified sampling:
 ```{r}
 prop.table(table(training_set$quality))
 prop.table(table(test_set$quality))
 ```
-Training:
-```{r,echo=FALSE}
-classifier = naiveBayes(x = training_set[ ,-12], y = training_set$quality )
-```
+<h3>5. Training with Naive Bayes model</h3>
 ```{r}
+classifier = naive_bayes(x = training_set[ ,-12], y = training_set$quality )
 classifier
 ```
+The summary of the classifier show the mean and standard deviation of each independent variable on each target variable's category.
+<h3>6. Prediction</h3>
 Predict on training dataset:
-```{r,echo=FALSE}
+```{r}
 y_pred_train = predict(classifier, newdata = training_set[ ,-12])
-cm = table(training_set$quality, y_pred_train)
-accuracy = sum(diag(cm))/sum(cm)
 ```
+Prediction performance on the training set:
 ```{r}
-cm
-accuracy
+# Confusion Matrix
+confusionMatrix(y_pred_train, training_set$quality)
 ```
-Predict on test dataset:
-```{r,echo=FALSE}
+Prediction performance on test dataset:
+```{r}
 y_pred_train_2 = predict(classifier, newdata = test_set[ ,-12])
-cm2 = table(test_set$quality, y_pred_train_2)
-accuracy2 = sum(diag(cm2))/sum(cm2)
+# Confusion Matrix
+confusionMatrix(y_pred_train_2, test_set$quality)
 ```
+The accuracy reached at 0.575 on test set and 0.5324 on training set, but the problem is it only fall on the category have lot of observation like class 3 and class 4. That is the reason why its kappa index is very low only 0.2743 on test set which is just fair.
+<h3>7. Handle imbalance issue with Over-sampling</h3>
+The observation of the minority classes will be random over-sampling by using the upSample fuction in Caret Packet
 ```{r}
-cm2
-accuracy2
+set.seed(2969)
+data_wine_eq <- upSample(x = data_wine[, -12], y = data_wine$quality)
 ```
+Structure of the new dataset:
+```{r}
+str(data_wine_eq)
+```
+Distribution of the target variable:
+```{r}
+barplot(table(data_wine_eq$Class))
+```
+<h3>8. Stratified sampling the balanced dataset</h3>
+```{r}
+set.seed(1234)
+split = sample.split(data_wine_eq$Class, SplitRatio = 0.7)
+training_set_eq = subset(data_wine_eq, split == TRUE)
+test_set_eq = subset(data_wine_eq, split == FALSE)
+```
+The proportion after stratified sampling:
+```{r}
+prop.table(table(training_set_eq$Class))
+prop.table(table(test_set_eq$Class))
+```
+<h3>5. Training the balanced dataset with Naive Bayes model</h3>
+```{r}
+classifier_eq = naive_bayes(x = training_set_eq[ ,-12], y = training_set_eq$Class )
+classifier_eq
+```
+<h3>6. Prediction on balanced dataset</h3>
+Prediction performance on balanced training dataset:
+```{r}
+y_pred_train_eq = predict(classifier_eq, newdata = training_set_eq[ ,-12])
+# Confusion Matrix
+confusionMatrix(y_pred_train_eq, training_set_eq$Class)
+```
+Prediction performance on balanced test dataset:
+```{r}
+y_pred_train_eq_2 = predict(classifier_eq, newdata = test_set_eq[ ,-12])
+# Confusion Matrix
+confusionMatrix(y_pred_train_eq_2, test_set_eq$Class)
+```
+Accuracy is reduced to 0.5077 on balanced training set and 0.4918 on balanced test set. On the positive view, the kappa index on the balanced test set increase to 0.3902 but still fair. The sensitivity of Class 1 and Class 6 show greate promise at 0.8137 and 0.9363 which mean there 2 classes have unique feature and can be clearly discriminated.
+<h3>7. Training the balanced dataset with Kernel density Naive Bayes model</h3>
+Most of the independent variables are Non-normal distribution, on the last effort, the balanced training set will be trained by Kernel density Naive Bayes model to enhance the accuracy and better handdle Non-normal distribution data.
+```{r}
+classifier_kd = naive_bayes(x = training_set_eq[ ,-12], y = training_set_eq$Class, usekernel = TRUE )
+classifier_kd
+```
+<h3>8. Prediction with Kernel density Naive Bayes model </h3>
+Prediction performance on balanced training dataset:
+```{r}
+y_pred_train_kd = predict(classifier_kd, newdata = training_set_eq[ ,-12])
+# Confusion Matrix
+confusionMatrix(y_pred_train_kd, training_set_eq$Class)
+```
+Prediction performance on balanced test dataset:
+```{r}
+y_pred_train_kd_2 = predict(classifier_kd, newdata = test_set_eq[ ,-12])
+# Confusion Matrix
+confusionMatrix(y_pred_train_kd_2, test_set_eq$Class)
+```
+The accurrcy soares into 0.7135 on balanced training set and 0.6797 on balanced test set far better than the last 2 models. Kappa also raises to 0.6157 on balanced test set which is substantial. The sensitivity of the class 5 is achieved 0.7010 on balanced test set, which makes the sentisitvity of 3/6 in the good rate, class 4 is still stay at 0.25490 very poor sensitivity, refer to the confusion matrix, most of the observations in class 4 be wrongly classified as class 3 (51 observations) and class  5(53 observations).
+<h3>9. Conclusion</h3>
+By the way training with Kernel density Naive Bayes model and dataset with imbalance issue handled, the accuracy and kappa reach the highest. But in there, class 4 of the target variable still has low sensitivity - 0.255, which mean only 25.5% of the truly class 4 observations are correctly identified. 
